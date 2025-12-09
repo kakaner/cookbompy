@@ -16,7 +16,15 @@ export const useBooksStore = defineStore('books', () => {
     format: null,
     book_type: null,
     read_status: null,
-    search: null
+    search: null,
+    sort: 'date_read_desc',
+    language: null,
+    has_review: null,
+    author: null,
+    publisher: null,
+    series: null,
+    genre: null,
+    semester: null
   })
 
   const fetchBooks = async (params = {}) => {
@@ -29,9 +37,11 @@ export const useBooksStore = defineStore('books', () => {
         ...params
       }
       
-      // Remove null/undefined values
+      // Remove null/undefined values and handle arrays
       Object.keys(queryParams).forEach(key => {
         if (queryParams[key] === null || queryParams[key] === undefined) {
+          delete queryParams[key]
+        } else if (Array.isArray(queryParams[key]) && queryParams[key].length === 0) {
           delete queryParams[key]
         }
       })
@@ -179,7 +189,15 @@ export const useBooksStore = defineStore('books', () => {
       format: null,
       book_type: null,
       read_status: null,
-      search: null
+      search: null,
+      sort: 'date_read_desc',
+      language: null,
+      has_review: null,
+      author: null,
+      publisher: null,
+      series: null,
+      genre: null,
+      semester: null
     }
     pagination.value.page = 1
   }

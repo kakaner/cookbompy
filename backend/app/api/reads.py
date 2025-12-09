@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
 from typing import List
 
 from app.database import get_db
 from app.models.user import User
 from app.models.book import Book
 from app.models.read import Read
+from app.models.comment import Comment
 from app.schemas.read import ReadCreate, ReadUpdate, ReadResponse
 from app.core.security import get_current_user
 from app.services.point_calculator import PointCalculator
@@ -96,7 +98,8 @@ def create_read(
         base_points_overridden=base_points_overridden,
         calculated_points_allegory=calculated_points_allegory,
         calculated_points_reasonable=calculated_points_reasonable,
-        is_memorable=read_data.is_memorable
+        is_memorable=read_data.is_memorable,
+        rating=read_data.rating
     )
     
     db.add(read)
@@ -115,7 +118,7 @@ def get_reads_for_book(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all reads for a book"""
+    """Get all reads for a book (current user only)"""
     # Verify book exists and belongs to user
     book = db.query(Book).filter(
         Book.id == book_id,
@@ -133,6 +136,93 @@ def get_reads_for_book(
     # Add points breakdown to each read
     for read in reads:
         _add_points_breakdown(read, book)
+    
+    return reads
+
+
+def _normalize_book_identifier(title: str, author: str) -> tuple:
+    """Normalize book title and author for matching across users"""
+    import re
+    # Convert to lowercase, strip whitespace, and normalize multiple spaces to single space
+    # Also remove common punctuation that might differ
+    if title:
+        normalized_title = re.sub(r'\s+', ' ', title.lower().strip())
+        # Remove common punctuation that might differ between entries
+        normalized_title = re.sub(r'[.,;:!?\'"()]', '', normalized_title)
+    else:
+        normalized_title = ""
+    if author:
+        normalized_author = re.sub(r'\s+', ' ', author.lower().strip())
+        # Remove common punctuation
+        normalized_author = re.sub(r'[.,;:!?\'"()]', '', normalized_author)
+    else:
+        normalized_author = ""
+    return (normalized_title, normalized_author)
+
+
+@router.get("/book/{book_id}/community", response_model=List[ReadResponse])
+def get_community_reads_for_book(
+    book_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get all reads for a book from all community users, matching by title and author"""
+    # Get the book to extract title and author
+    book = db.query(Book).filter(Book.id == book_id).first()
+    
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    
+    # Normalize title and author for matching
+    normalized_title, normalized_author = _normalize_book_identifier(book.title, book.author)
+    
+    # Find all books and match by normalized title and author
+    # We fetch all books and normalize in Python for more reliable matching
+    all_books = db.query(Book).all()
+    matching_book_ids = []
+    
+    # Also include the original book_id to ensure backwards compatibility
+    matching_book_ids.append(book_id)
+    
+    for b in all_books:
+        # Skip the original book (already added)
+        if b.id == book_id:
+            continue
+            
+        b_normalized_title, b_normalized_author = _normalize_book_identifier(b.title, b.author)
+        if b_normalized_title == normalized_title and b_normalized_author == normalized_author:
+            matching_book_ids.append(b.id)
+    
+    if not matching_book_ids:
+        # If no matching books found, return empty list
+        return []
+    
+    # Get all reads for all matching books from all users, with user info
+    reads = db.query(Read).options(
+        joinedload(Read.user)
+    ).filter(
+        Read.book_id.in_(matching_book_ids)
+    ).order_by(
+        Read.date_finished.desc().nullslast(),
+        Read.date_started.desc().nullslast(),
+        Read.created_at.desc()
+    ).all()
+    
+    # Add comment count and points breakdown to each read
+    for read in reads:
+        # Count comments for this read
+        comment_count = db.query(func.count(Comment.id)).filter(
+            Comment.read_id == read.id
+        ).scalar() or 0
+        
+        # Add comment count as attribute
+        setattr(read, 'comment_count', comment_count)
+        
+        # Get the book for this read to calculate points
+        read_book = db.query(Book).filter(Book.id == read.book_id).first()
+        if read_book:
+            # Add points breakdown using the read's book
+            _add_points_breakdown(read, read_book)
     
     return reads
 

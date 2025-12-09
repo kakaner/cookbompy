@@ -22,7 +22,8 @@ class SemesterUpdate(BaseModel):
 class SemesterStats(BaseModel):
     """Statistics for a semester"""
     books_read: int = 0
-    total_pages: int = 0
+    total_unviewnered: int = 0
+    commented: int = 0
     avg_points_allegory: float = 0.0
     avg_points_reasonable: float = 0.0
     total_points_allegory: float = 0.0

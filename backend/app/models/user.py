@@ -20,6 +20,7 @@ class User(Base):
     default_book_format = Column(String(50), nullable=True)  # Likely default format for new books (stored as string)
     color_theme = Column(String(50), nullable=True, default="terracotta")  # Color theme preference
     default_page_size = Column(Integer, nullable=True, default=50)  # Pagination preference
+    default_home_page = Column(String(50), nullable=True, default="library")  # Default home page: library, semesters, statistics
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -28,4 +29,7 @@ class User(Base):
     books = relationship("Book", back_populates="user")
     semesters = relationship("Semester", back_populates="user")
     reads = relationship("Read", back_populates="user")
+    comments = relationship("Comment", back_populates="user")
+    comment_reactions = relationship("CommentReaction", back_populates="user")
+    shareable_links = relationship("ShareableLink", back_populates="user", cascade="all, delete-orphan")
 

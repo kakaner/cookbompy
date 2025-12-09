@@ -35,9 +35,46 @@
         <span>Searching and loading book data...</span>
       </div>
 
-      <!-- Search Results -->
+      <!-- Existing Books in Database -->
+      <div v-if="existingBooks.length > 0" class="existing-books-section">
+        <div class="existing-books-header">
+          <h4 class="existing-books-title">
+            <span class="existing-books-icon">📚</span>
+            Existing Books in Community
+          </h4>
+          <p class="existing-books-hint">These books are already in the system. Link to one to share reads and reviews with the community!</p>
+        </div>
+        <div class="results-grid">
+          <div
+            v-for="book in existingBooks"
+            :key="book.id"
+            class="result-card existing-book-card"
+            :class="{ 'my-book': book.is_my_book }"
+          >
+            <div class="result-cover">
+              <img v-if="book.cover_image_url" :src="book.cover_image_url" :alt="book.title" />
+              <div v-else class="cover-placeholder-small">{{ book.title.charAt(0) }}</div>
+            </div>
+            <div class="result-info">
+              <h4>{{ book.title }}</h4>
+              <p>{{ book.author }}</p>
+              <p v-if="book.publication_date" class="result-meta">{{ new Date(book.publication_date).getFullYear() }}</p>
+              <div class="book-owner-info">
+                <span v-if="book.is_my_book" class="owner-badge my-book-badge">My Book</span>
+                <span v-else class="owner-badge other-user-badge">
+                  Owned by {{ book.owner_display_name || book.owner_username }}
+                </span>
+                <span v-if="book.read_count > 0" class="read-count-badge">{{ book.read_count }} read{{ book.read_count !== 1 ? 's' : '' }}</span>
+              </div>
+            </div>
+            <button class="select-btn link-btn" @click.stop="linkToExistingBook(book)">Link to This Book</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- External Search Results -->
       <div v-if="searchResults.length > 0" class="search-results">
-        <h4>Search Results</h4>
+        <h4>External Search Results</h4>
         <div class="results-grid">
           <div
             v-for="result in searchResults"
@@ -67,7 +104,16 @@
 
     <!-- Manual Entry Form -->
     <div class="form-section card">
-      <h3 class="form-title">Book Information</h3>
+      <div class="form-title-section">
+        <h3 class="form-title">Book Information</h3>
+        <div v-if="selectedExistingBookId" class="linking-indicator">
+          <span class="linking-icon">🔗</span>
+          <span>Linking to existing book</span>
+          <button type="button" @click="selectedExistingBookId = null" class="clear-link-btn" title="Create new book instead">
+            ×
+          </button>
+        </div>
+      </div>
       
       <form @submit.prevent="handleSubmit">
         <div v-if="error" class="error">
@@ -116,6 +162,8 @@
                 class="form-input"
                 :class="{ 'auto-loaded-field': autoLoadedFields.isbn_13 }"
                 placeholder="ISBN-13"
+                @blur="searchExistingBooks"
+                @input="selectedExistingBookId = null"
               />
             </div>
 
@@ -229,107 +277,140 @@
           </div>
         </div>
 
-        <!-- Points Calculator (if read) -->
-        <div class="form-section-inner" v-if="formData.read_status === 'READ' && formData.book_type">
-          <h4 class="section-heading">Points Calculator</h4>
-          <div class="points-calculator">
-            <div class="points-breakdown">
-              <div class="points-row">
-                <span>Base Points:</span>
-                <span>{{ calculatedPoints.base.toFixed(2) }}</span>
-              </div>
-              <div class="points-row" v-if="calculatedPoints.lengthAddons > 0">
-                <span>Length Add-ons:</span>
-                <span>+{{ calculatedPoints.lengthAddons.toFixed(2) }}</span>
-              </div>
-              <div class="points-row" v-if="formData.is_reread">
-                <span>Reread Multiplier:</span>
-                <span>× 0.5</span>
-              </div>
-              <div class="points-row total">
-                <span>bompyallegory:</span>
-                <span>{{ calculatedPoints.allegory.toFixed(2) }} pts</span>
-              </div>
-              <div class="points-row total">
-                <span>bompyreasonable:</span>
-                <span>{{ calculatedPoints.reasonable.toFixed(2) }} pts</span>
-              </div>
-            </div>
-            <div class="override-section">
-              <label class="checkbox-label">
-                <input
-                  v-model="overrideBasePoints"
-                  type="checkbox"
-                  @change="handleOverrideToggle"
-                />
-                Override Base Points
-              </label>
-              <div v-if="overrideBasePoints" class="override-input-group">
-                <input
-                  v-model.number="formData.base_points"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  class="override-input"
-                  placeholder="Base points"
-                />
-                <span>points</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Reading Status -->
+        <!-- Reading Sessions -->
         <div class="form-section-inner">
-          <h4 class="section-heading">Reading Status</h4>
-          <div class="form-grid">
-            <div class="form-field">
-              <label class="form-label">Status</label>
-              <select v-model="formData.read_status" class="form-select">
-                <option value="UNREAD">Unread</option>
-                <option value="READING">Currently Reading</option>
-                <option value="READ">Read</option>
-                <option value="DNF">Did Not Finish</option>
-              </select>
-            </div>
-
-            <div class="form-field">
-              <label class="form-label">Date Finished</label>
-              <input
-                v-model="formData.date_finished"
-                type="date"
-                class="form-input"
-              />
-              <div class="field-hint">Used to assign semester</div>
-            </div>
-
-            <div class="form-field">
-              <label class="form-label">Date Started (Optional)</label>
-              <input
-                v-model="formData.date_started"
-                type="date"
-                class="form-input"
-              />
-              <div class="field-hint">For conjugation tracking</div>
-            </div>
-
-            <div class="form-field">
-              <label class="checkbox-label">
-                <input
-                  v-model="formData.is_reread"
-                  type="checkbox"
-                />
-                This is a re-read
-              </label>
-            </div>
-            <div class="form-field">
-              <label class="checkbox-label">
-                <input
-                  v-model="formData.is_memorable"
-                  type="checkbox"
-                />
-                Mark as memorable (featured in semester timeline)
-              </label>
+          <div class="section-header-with-action">
+            <h4 class="section-heading">Reading Sessions</h4>
+            <button type="button" @click="addNewRead" class="btn btn-secondary btn-sm">
+              + Add Read
+            </button>
+          </div>
+          
+          <div v-if="reads.length === 0" class="empty-reads">
+            <p>No reading sessions yet. Click "Add Read" to record your first reading of this boko.</p>
+          </div>
+          
+          <div v-else class="reads-list">
+            <div
+              v-for="(read, index) in reads"
+              :key="`new-${index}`"
+              class="read-section"
+              :class="{ 'is-editing': editingReadIndex === index }"
+            >
+              <div class="read-header" @click="toggleReadEdit(index)">
+                <div class="read-header-info">
+                  <h5 class="read-title">
+                    Read #{{ index + 1 }}
+                    <span v-if="read.is_reread" class="reread-badge">Re-read</span>
+                    <span v-if="read.is_memorable" class="memorable-badge-small">⭐</span>
+                  </h5>
+                  <div class="read-dates">
+                    <span v-if="read.date_finished">{{ formatDate(read.date_finished) }}</span>
+                    <span v-else-if="read.date_started">Started: {{ formatDate(read.date_started) }}</span>
+                    <span v-else class="text-muted">Not started</span>
+                  </div>
+                </div>
+                <div class="read-header-actions">
+                  <span class="read-status-badge" :class="`status-${(read.read_status || 'READ').toLowerCase()}`">
+                    {{ read.read_status || 'READ' }}
+                  </span>
+                  <span class="collapse-icon">{{ editingReadIndex === index ? '▲' : '▼' }}</span>
+                </div>
+              </div>
+              
+              <div v-if="editingReadIndex === index" class="read-edit-form">
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label class="form-label">Status</label>
+                    <select v-model="read.read_status" class="form-select">
+                      <option value="READ">Finished</option>
+                      <option value="DNF">Did Not Finish</option>
+                    </select>
+                  </div>
+                  
+                  <div class="form-field">
+                    <label class="form-label">Date Started</label>
+                    <input
+                      v-model="read.date_started"
+                      type="date"
+                      class="form-input"
+                    />
+                  </div>
+                  
+                  <div class="form-field">
+                    <label class="form-label">Date Finished</label>
+                    <input
+                      v-model="read.date_finished"
+                      type="date"
+                      class="form-input"
+                    />
+                  </div>
+                  
+                  <div class="form-field">
+                    <label class="checkbox-label">
+                      <input v-model="read.is_reread" type="checkbox" />
+                      This is a re-read
+                    </label>
+                  </div>
+                  
+                  <div class="form-field">
+                    <label class="checkbox-label">
+                      <input v-model="read.is_memorable" type="checkbox" />
+                      Mark as memorable (featured in semester timeline)
+                    </label>
+                  </div>
+                </div>
+                
+                <!-- Points Calculator for this read -->
+                <div v-if="read.read_status === 'READ' && formData.book_type" class="points-calculator-read">
+                  <h5>Points for this read:</h5>
+                  <div class="points-display-read">
+                    <div class="points-row">
+                      <span>Bompyallegory:</span>
+                      <span class="points-value">{{ calculateReadPoints(read).allegory.toFixed(2) }}</span>
+                    </div>
+                    <div class="points-row">
+                      <span>Bompyreasonable:</span>
+                      <span class="points-value">{{ calculateReadPoints(read).reasonable.toFixed(2) }}</span>
+                    </div>
+                    <div class="form-field">
+                      <label class="checkbox-label">
+                        <input v-model="read.overrideBasePoints" type="checkbox" />
+                        Override Base Points
+                      </label>
+                      <input
+                        v-if="read.overrideBasePoints"
+                        v-model.number="read.base_points"
+                        type="number"
+                        step="0.01"
+                        class="form-input"
+                        placeholder="e.g., 1.0"
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Review -->
+                <div class="form-field full-width">
+                  <label class="form-label">Review / Notes</label>
+                  <textarea
+                    v-model="read.review"
+                    class="form-input"
+                    rows="4"
+                    placeholder="Your thoughts, notes, or review for this reading..."
+                  ></textarea>
+                </div>
+                
+                <!-- Read Actions -->
+                <div class="read-actions">
+                  <button type="button" @click="removeRead(index)" class="btn btn-danger btn-sm">
+                    Remove Read
+                  </button>
+                  <button type="button" @click="cancelReadEdit" class="btn btn-sm">
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -486,6 +567,7 @@ import { useBooksStore } from '../stores/books'
 import { useAuthStore } from '../stores/auth'
 import FormatSelect from '../components/FormatSelect.vue'
 import GenreInput from '../components/GenreInput.vue'
+import api from '../services/api'
 
 const router = useRouter()
 const booksStore = useBooksStore()
@@ -495,11 +577,16 @@ const searchQuery = ref('')
 const searching = ref(false)
 const searchResults = ref([])
 const searchError = ref(null)
+const existingBooks = ref([])
+const searchingExisting = ref(false)
+const selectedExistingBookId = ref(null)
 const showAdditionalDetails = ref(false)
 const loading = ref(false)
 const error = ref(null)
 const coverFile = ref(null)
 const coverPreview = ref(null)
+const reads = ref([])
+const editingReadIndex = ref(null)
 
 const autoLoadedFields = ref({
   title: false,
@@ -538,13 +625,7 @@ const formData = ref({
   acquisition_date: null,
   acquisition_source: '',
   physical_location: '',
-  date_started: null,
-  date_finished: null,
-  is_reread: false,
-  is_memorable: false,
-  read_status: 'UNREAD',
-  format: 'PAPERBACK', // Default format, will be overridden by user preference
-  base_points: null
+  format: 'PAPERBACK' // Default format, will be overridden by user preference
 })
 
 // Apply user's default book format on mount
@@ -553,6 +634,18 @@ onMounted(() => {
     formData.value.format = authStore.user.default_book_format
   }
 })
+
+// Watch for ISBN changes to search existing books
+watch(() => [formData.value.isbn_13, formData.value.isbn_10], ([isbn13, isbn10]) => {
+  if ((isbn13 && isbn13.length >= 10) || (isbn10 && isbn10.length >= 10)) {
+    // Debounce the search
+    setTimeout(() => {
+      if (selectedExistingBookId.value === null) {
+        searchExistingBooks()
+      }
+    }, 500)
+  }
+}, { immediate: false })
 
 const isFormValid = computed(() => {
   return formData.value.title.trim() &&
@@ -567,11 +660,32 @@ const performSearch = async () => {
   searching.value = true
   searchError.value = null
   searchResults.value = []
+  existingBooks.value = []
   
   try {
+    // Search external databases
     const results = await booksStore.searchExternal(searchQuery.value)
     searchResults.value = results
-    if (results.length === 0) {
+    
+    // Also search for existing books in the database using the search query
+    // Try to parse title/author from the query
+    const queryParts = searchQuery.value.trim().split(/\s+by\s+/i)
+    let searchTitle = searchQuery.value.trim()
+    let searchAuthor = null
+    
+    if (queryParts.length === 2) {
+      // Format: "title by author"
+      searchTitle = queryParts[0].trim()
+      searchAuthor = queryParts[1].trim()
+    } else {
+      // For queries like "remains of the day", search by title only
+      // The backend will match books with that title (case-insensitive, partial match)
+      searchTitle = searchQuery.value.trim()
+    }
+    
+    await searchExistingBooksByQuery(searchTitle, searchAuthor)
+    
+    if (results.length === 0 && existingBooks.value.length === 0) {
       searchError.value = 'No results found. Try a different search or enter manually.'
     }
   } catch (err) {
@@ -582,7 +696,80 @@ const performSearch = async () => {
   }
 }
 
+const searchExistingBooks = async () => {
+  return searchExistingBooksByQuery(
+    formData.value.title,
+    formData.value.author
+  )
+}
+
+const searchExistingBooksByQuery = async (title = null, author = null) => {
+  searchingExisting.value = true
+  existingBooks.value = []
+  
+  try {
+    const params = {}
+    
+    // Search by ISBN if available (most reliable)
+    if (formData.value.isbn_13 && formData.value.isbn_13.trim().length >= 10) {
+      params.isbn_13 = formData.value.isbn_13.replace(/[-\s]/g, '')
+    }
+    if (formData.value.isbn_10 && formData.value.isbn_10.trim().length >= 10) {
+      params.isbn_10 = formData.value.isbn_10.replace(/[-\s]/g, '')
+    }
+    
+    // Search by title and author if available (only if no ISBN to avoid too many results)
+    if (!params.isbn_13 && !params.isbn_10) {
+      // Use provided title/author or fall back to form data
+      const searchTitle = title || formData.value.title
+      const searchAuthor = author || formData.value.author
+      
+      if (searchTitle && searchTitle.trim().length >= 3) {
+        params.title = searchTitle.trim()
+      }
+      if (searchAuthor && searchAuthor.trim().length >= 3) {
+        params.author = searchAuthor.trim()
+      }
+    }
+    
+    // Only search if we have at least one criteria
+    if (Object.keys(params).length > 0) {
+      const response = await api.get('/books/search/existing', { params })
+      existingBooks.value = response.data || []
+    }
+  } catch (err) {
+    console.error('Error searching existing books:', err)
+    // Don't show error to user, just silently fail
+  } finally {
+    searchingExisting.value = false
+  }
+}
+
+const linkToExistingBook = async (book) => {
+  selectedExistingBookId.value = book.id
+  
+  // Fill form with book data for reference
+  formData.value.title = book.title
+  formData.value.author = book.author
+  formData.value.isbn_13 = book.isbn_13 || formData.value.isbn_13
+  formData.value.isbn_10 = book.isbn_10 || formData.value.isbn_10
+  formData.value.publication_date = book.publication_date || formData.value.publication_date
+  formData.value.publisher = book.publisher || formData.value.publisher
+  formData.value.page_count = book.page_count || formData.value.page_count
+  formData.value.cover_image_url = book.cover_image_url || formData.value.cover_image_url
+  
+  if (book.cover_image_url) {
+    coverPreview.value = book.cover_image_url
+  }
+  
+  // Scroll to form
+  document.querySelector('.form-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 const selectSearchResult = (result) => {
+  // Clear any selected existing book
+  selectedExistingBookId.value = null
+  
   // Auto-fill form with search result
   formData.value.title = result.title || formData.value.title
   formData.value.author = result.author || formData.value.author
@@ -622,6 +809,11 @@ const selectSearchResult = (result) => {
     book_type: false,
     genres: !!(result.genres && result.genres.length > 0),
     description: !!result.description
+  }
+  
+  // Search for existing books after filling ISBN
+  if (result.isbn_13 || result.isbn_10) {
+    searchExistingBooks()
   }
   
   // Scroll to form
@@ -664,6 +856,99 @@ const getSourceIcon = (source) => {
   return icons[source] || '?'
 }
 
+// Read management functions
+const addNewRead = () => {
+  const newRead = {
+    read_status: 'READ',
+    date_started: null,
+    date_finished: null,
+    is_reread: false,
+    is_memorable: false,
+    review: null,
+    read_vibe_photo_url: null,
+    base_points: null,
+    overrideBasePoints: false
+  }
+  reads.value.push(newRead)
+  editingReadIndex.value = reads.value.length - 1
+}
+
+const toggleReadEdit = (index) => {
+  if (editingReadIndex.value === index) {
+    editingReadIndex.value = null
+  } else {
+    editingReadIndex.value = index
+  }
+}
+
+const cancelReadEdit = () => {
+  editingReadIndex.value = null
+}
+
+const removeRead = (index) => {
+  reads.value.splice(index, 1)
+  if (editingReadIndex.value === index) {
+    editingReadIndex.value = null
+  } else if (editingReadIndex.value > index) {
+    editingReadIndex.value--
+  }
+}
+
+const formatDate = (dateString) => {
+  if (!dateString) return ''
+  const date = new Date(dateString)
+  return date.toLocaleDateString()
+}
+
+// Calculate points for a specific read
+const calculateReadPoints = (read) => {
+  if (!formData.value.book_type || read.read_status !== 'READ') {
+    return {
+      base: 0,
+      lengthAddons: 0,
+      allegory: 0,
+      reasonable: 0
+    }
+  }
+  
+  // Base points by book type
+  const basePointsMap = {
+    'FICTION': 1.0,
+    'NONFICTION': 1.5,
+    'YA': 0.75,
+    'CHILDRENS': 0.5,
+    'COMIC': 0.5,
+    'NOVELLA': 0.5,
+    'SHORT_STORY': 0.1,
+    'OTHER': 1.0
+  }
+  
+  const base = read.overrideBasePoints && read.base_points ? read.base_points : (basePointsMap[formData.value.book_type] || 1.0)
+  
+  // Length add-ons
+  let lengthAddons = 0
+  if (formData.value.page_count) {
+    const effectivePages = formData.value.page_count + 13 // Grace buffer
+    if (effectivePages >= 500) {
+      lengthAddons = 1.0
+      const pagesOverFirst = effectivePages - 500
+      lengthAddons += Math.floor(pagesOverFirst / 100) * 1.0
+    }
+  }
+  
+  // Calculate totals
+  const total = base + lengthAddons
+  const allegory = read.is_reread ? total * 0.5 : total
+  const reasonable = total
+  
+  return {
+    base,
+    lengthAddons,
+    allegory,
+    reasonable
+  }
+}
+
 const handleSubmit = async () => {
   if (!isFormValid.value) {
     error.value = 'Please fill in all required fields'
@@ -674,46 +959,75 @@ const handleSubmit = async () => {
   error.value = null
   
   try {
-    // Prepare book data (remove reading fields - they go in Read model)
-    const bookData = {
-      ...formData.value,
-      publication_date: formData.value.publication_date || null,
-      acquisition_date: formData.value.acquisition_date || null,
-      page_count: formData.value.page_count || null,
-      series_number: formData.value.series_number || null,
-      genres: formData.value.genres.length > 0 ? formData.value.genres : null
+    let book
+    
+    // If linking to existing book, use that book_id
+    if (selectedExistingBookId.value) {
+      // Link to existing book - create book with link parameter
+      const bookData = {
+        ...formData.value,
+        publication_date: formData.value.publication_date || null,
+        acquisition_date: formData.value.acquisition_date || null,
+        page_count: formData.value.page_count || null,
+        series_number: formData.value.series_number || null,
+        genres: formData.value.genres.length > 0 ? formData.value.genres : null
+      }
+      
+      // Remove reading fields from book data
+      delete bookData.date_started
+      delete bookData.date_finished
+      delete bookData.is_reread
+      delete bookData.is_memorable
+      delete bookData.read_status
+      delete bookData.base_points
+      
+      // Create book with link parameter
+      const response = await api.post(`/books?link_to_existing_book_id=${selectedExistingBookId.value}`, bookData)
+      book = response.data
+    } else {
+      // Prepare book data (remove reading fields - they go in Read model)
+      const bookData = {
+        ...formData.value,
+        publication_date: formData.value.publication_date || null,
+        acquisition_date: formData.value.acquisition_date || null,
+        page_count: formData.value.page_count || null,
+        series_number: formData.value.series_number || null,
+        genres: formData.value.genres.length > 0 ? formData.value.genres : null
+      }
+      
+      // Remove reading fields from book data
+      delete bookData.date_started
+      delete bookData.date_finished
+      delete bookData.is_reread
+      delete bookData.is_memorable
+      delete bookData.read_status
+      delete bookData.base_points
+      
+      // Create new book
+      book = await booksStore.createBook(bookData)
     }
-    
-    // Remove reading fields from book data
-    delete bookData.date_started
-    delete bookData.date_finished
-    delete bookData.is_reread
-    delete bookData.is_memorable
-    delete bookData.read_status
-    delete bookData.base_points
-    
-    // Create book
-    const book = await booksStore.createBook(bookData)
     
     // Upload cover if provided
     if (coverFile.value) {
       await booksStore.uploadCover(book.id, coverFile.value)
     }
     
-    // Create initial read if reading data was provided
-    if (formData.value.read_status !== 'UNREAD' || formData.value.date_started || formData.value.date_finished) {
+    // Create reads for all reading sessions
+    for (const read of reads.value) {
       try {
         const readData = {
-          read_status: formData.value.read_status || 'UNREAD',
-          date_started: formData.value.date_started || null,
-          date_finished: formData.value.date_finished || null,
-          is_reread: formData.value.is_reread || false,
-          is_memorable: formData.value.is_memorable || false,
-          base_points: formData.value.base_points || null
+          read_status: read.read_status || 'READ',
+          date_started: read.date_started || null,
+          date_finished: read.date_finished || null,
+          is_reread: read.is_reread || false,
+          is_memorable: read.is_memorable || false,
+          review: read.review || null,
+          read_vibe_photo_url: read.read_vibe_photo_url || null,
+          base_points: read.overrideBasePoints ? read.base_points : null
         }
         await api.post(`/reads?book_id=${book.id}`, readData)
       } catch (err) {
-        console.error('Error creating initial read:', err)
+        console.error('Error creating read:', err)
         // Don't fail the whole operation if read creation fails
       }
     }
@@ -830,6 +1144,103 @@ const handleSubmit = async () => {
   to { transform: rotate(360deg); }
 }
 
+.existing-books-section {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  background: rgba(155, 72, 25, 0.05);
+  border: 2px solid rgba(155, 72, 25, 0.2);
+  border-radius: var(--radius-md);
+}
+
+.existing-books-header {
+  margin-bottom: 1rem;
+}
+
+.existing-books-title {
+  margin-bottom: 0.5rem;
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.existing-books-hint {
+  font-size: 0.875rem;
+  color: var(--color-text-light);
+  font-style: italic;
+  margin: 0;
+}
+
+.existing-books-icon {
+  font-size: 1.25rem;
+}
+
+.existing-book-card {
+  border-color: rgba(155, 72, 25, 0.3);
+  background: var(--color-surface);
+}
+
+.existing-book-card.my-book {
+  border-color: var(--color-primary);
+  background: rgba(155, 72, 25, 0.05);
+}
+
+.existing-book-card:hover {
+  border-color: var(--color-primary);
+}
+
+.book-owner-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.owner-badge {
+  display: inline-block;
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.my-book-badge {
+  background: var(--color-primary);
+  color: var(--color-background);
+}
+
+.other-user-badge {
+  background: rgba(107, 116, 86, 0.15);
+  color: var(--color-secondary);
+  border: 1px solid rgba(107, 116, 86, 0.3);
+}
+
+.read-count-badge {
+  display: inline-block;
+  padding: 0.25rem 0.625rem;
+  background: rgba(155, 72, 25, 0.1);
+  color: var(--color-primary);
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.link-btn {
+  background: var(--color-secondary);
+  margin-top: auto;
+}
+
+.link-btn:hover {
+  background: var(--color-secondary-dark);
+}
+
 .search-results {
   margin-top: 1.5rem;
 }
@@ -930,12 +1341,56 @@ const handleSubmit = async () => {
   margin-bottom: 2rem;
 }
 
+.form-title-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+}
+
 .form-title {
   font-family: var(--font-heading);
   font-size: 1.5rem;
   font-weight: 600;
-  margin-bottom: 1.5rem;
+  margin: 0;
   color: var(--color-text);
+}
+
+.linking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(107, 116, 86, 0.15);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--radius-full);
+  color: var(--color-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.linking-icon {
+  font-size: 1rem;
+}
+
+.clear-link-btn {
+  margin-left: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  background: transparent;
+  border: none;
+  color: var(--color-secondary);
+  font-size: 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 50%;
+  transition: all var(--transition-fast);
+}
+
+.clear-link-btn:hover {
+  background: rgba(107, 116, 86, 0.2);
+  color: var(--color-secondary-dark);
 }
 
 .form-section-inner {
@@ -1214,6 +1669,190 @@ const handleSubmit = async () => {
   border-radius: var(--radius-sm);
   font-weight: 600;
   font-family: var(--font-body);
+}
+
+/* Reading Sessions Styles */
+.section-header-with-action {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.btn-sm {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 2px solid var(--color-border);
+}
+
+.btn-secondary:hover {
+  background: var(--color-background);
+  border-color: var(--color-primary);
+}
+
+.btn-danger {
+  background: var(--color-error);
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #c92a2a;
+}
+
+.empty-reads {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-light);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+}
+
+.reads-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.read-section {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  transition: all var(--transition-fast);
+}
+
+.read-section.is-editing {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(155, 72, 25, 0.1);
+}
+
+.read-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast);
+}
+
+.read-header:hover {
+  background: var(--color-background);
+}
+
+.read-header-info {
+  flex: 1;
+}
+
+.read-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin: 0 0 0.25rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.read-dates {
+  font-size: 0.875rem;
+  color: var(--color-text-light);
+}
+
+.read-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.read-status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.read-status-badge.status-unread {
+  background: rgba(128, 128, 128, 0.15);
+  color: #666;
+}
+
+.read-status-badge.status-reading {
+  background: rgba(33, 150, 243, 0.15);
+  color: #2196F3;
+}
+
+.read-status-badge.status-read {
+  background: rgba(76, 175, 80, 0.15);
+  color: #4CAF50;
+}
+
+.read-status-badge.status-dnf {
+  background: rgba(244, 67, 54, 0.15);
+  color: #F44336;
+}
+
+.reread-badge {
+  padding: 0.125rem 0.5rem;
+  background: rgba(212, 175, 55, 0.15);
+  color: var(--color-accent);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.memorable-badge-small {
+  font-size: 0.875rem;
+}
+
+.read-edit-form {
+  padding: 1rem;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-background);
+}
+
+.points-calculator-read {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.points-calculator-read h5 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.points-display-read {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.points-value {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.read-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.text-muted {
+  color: var(--color-text-light);
+  font-style: italic;
 }
 
 @media (max-width: 768px) {

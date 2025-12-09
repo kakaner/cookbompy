@@ -10,18 +10,33 @@
       <div class="book-info">
         <h3 class="book-title">{{ book.title }}</h3>
         <p class="book-author">{{ book.author }}</p>
+        <div class="book-meta">
+          <span v-if="publicationYear" class="publication-year">{{ publicationYear }}</span>
+          <span v-if="book.has_review" class="viewner-badge">Viewnered</span>
+        </div>
+        <div v-if="uniqueReaders.length > 0" class="readers-list">
+          <div
+            v-for="reader in uniqueReaders"
+            :key="reader.id"
+            class="reader-avatar"
+            :title="reader.display_name || reader.username"
+          >
+            <img v-if="reader.profile_photo_url" :src="reader.profile_photo_url" :alt="reader.display_name || reader.username" />
+            <span v-else>{{ (reader.display_name || reader.username).charAt(0).toUpperCase() }}</span>
+          </div>
+        </div>
       </div>
     </div>
     <div class="card-badges">
       <span v-if="mostRecentReadSemester" class="semester-badge">
         {{ mostRecentReadSemester }}
       </span>
-      <span v-if="book.has_review" class="review-badge reviewed">✓</span>
       <span v-if="mostRecentReadPoints !== null" class="points-badge" :title="mostRecentReadPointsBreakdown">
         {{ mostRecentReadPoints.toFixed(2) }} pts
       </span>
       <span class="format-icon" :title="getFormatDisplayName(book.format)">
-        {{ getFormatIcon(book.format) }}
+        <img v-if="book.format === 'KINDLE'" src="/kindle-icon.svg" alt="Kindle" class="kindle-icon" />
+        <span v-else>{{ getFormatIcon(book.format) }}</span>
       </span>
     </div>
   </div>
@@ -80,6 +95,45 @@ const mostRecentReadPoints = computed(() => {
 
 const mostRecentReadPointsBreakdown = computed(() => {
   return mostRecentRead.value?.points?.breakdown || ''
+})
+
+const publicationYear = computed(() => {
+  if (!props.book.publication_date) return null
+  const date = new Date(props.book.publication_date)
+  return date.getFullYear()
+})
+
+// Get unique users who have read this book
+const uniqueReaders = computed(() => {
+  if (!props.book.reads || props.book.reads.length === 0) return []
+  
+  // Get unique users from reads
+  const userMap = new Map()
+  props.book.reads.forEach(read => {
+    if (read.user) {
+      // Use user info from read if available
+      if (!userMap.has(read.user.id)) {
+        userMap.set(read.user.id, {
+          id: read.user.id,
+          username: read.user.username,
+          display_name: read.user.display_name || read.user.username,
+          profile_photo_url: read.user.profile_photo_url
+        })
+      }
+    } else if (read.user_id) {
+      // Fallback to user_id if user object not available
+      if (!userMap.has(read.user_id)) {
+        userMap.set(read.user_id, {
+          id: read.user_id,
+          username: `user${read.user_id}`,
+          display_name: `User ${read.user_id}`,
+          profile_photo_url: null
+        })
+      }
+    }
+  })
+  
+  return Array.from(userMap.values())
 })
 </script>
 
@@ -216,6 +270,67 @@ const mostRecentReadPointsBreakdown = computed(() => {
 .format-icon {
   font-size: 1.2rem;
   cursor: help;
+  display: inline-flex;
+  align-items: center;
+}
+
+.kindle-icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  object-fit: contain;
+}
+
+.book-meta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-text-light);
+}
+
+.publication-year {
+  font-weight: 500;
+}
+
+.viewner-badge {
+  background: linear-gradient(135deg, rgba(155, 72, 25, 0.12) 0%, rgba(155, 72, 25, 0.08) 100%);
+  border: 1px solid rgba(155, 72, 25, 0.3);
+  color: var(--color-primary);
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
+}
+
+.readers-list {
+  display: flex;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.reader-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: var(--color-background);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  overflow: hidden;
+  border: 1.5px solid var(--color-background);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.reader-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 </style>
 

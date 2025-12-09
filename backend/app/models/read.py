@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, DateTime, Text, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, DateTime, Text, Boolean, ForeignKey, Float
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -27,6 +27,9 @@ class Read(Base):
     review = Column(Text, nullable=True)  # User's review/notes for this read
     read_vibe_photo_url = Column(String(500), nullable=True)  # Photo taken during/after this read
     
+    # Rating (0.5 to 10.0 in 0.5 increments)
+    rating = Column(Float, nullable=True, index=True)
+    
     # Point calculation for this read
     base_points = Column(Integer, nullable=True)  # User override for base points (stored as integer * 100)
     base_points_overridden = Column(Boolean, default=False)
@@ -43,4 +46,5 @@ class Read(Base):
     # Relationships
     book = relationship("Book", back_populates="reads")
     user = relationship("User", back_populates="reads")
+    comments = relationship("Comment", back_populates="read", cascade="all, delete-orphan")
 

@@ -220,8 +220,8 @@
                   </div>
                 </div>
                 <div class="read-header-actions">
-                  <span class="read-status-badge" :class="`status-${read.read_status?.toLowerCase()}`">
-                    {{ read.read_status || 'UNREAD' }}
+                  <span class="read-status-badge" :class="`status-${(read.read_status || 'READ').toLowerCase()}`">
+                    {{ read.read_status || 'READ' }}
                   </span>
                   <span class="collapse-icon">{{ editingReadIndex === index ? '▲' : '▼' }}</span>
                 </div>
@@ -232,9 +232,7 @@
                   <div class="form-field">
                     <label class="form-label">Status</label>
                     <select v-model="read.read_status" class="form-select">
-                      <option value="UNREAD">Unread</option>
-                      <option value="READING">Reading</option>
-                      <option value="READ">Read</option>
+                      <option value="READ">Finished</option>
                       <option value="DNF">Did Not Finish</option>
                     </select>
                   </div>
@@ -621,7 +619,7 @@ const loadBookData = async () => {
 // Read management functions
 const addNewRead = () => {
   const newRead = {
-    read_status: 'UNREAD',
+    read_status: 'READ',
     date_started: null,
     date_finished: null,
     is_reread: false,
@@ -659,7 +657,7 @@ const saveRead = async (index) => {
   try {
     const bookId = parseInt(route.params.id)
     const readData = {
-      read_status: read.read_status || 'UNREAD',
+      read_status: read.read_status || 'READ',
       date_started: read.date_started || null,
       date_finished: read.date_finished || null,
       is_reread: read.is_reread || false,
@@ -717,17 +715,29 @@ const handleVibePhotoSelect = async (event, index) => {
     return
   }
   
+  const read = reads.value[index]
+  if (!read) {
+    error.value = 'Read not found'
+    return
+  }
+  
+  // If the read doesn't have an id yet, we need to save it first
+  if (!read.id) {
+    error.value = 'Please save the read first before uploading a photo'
+    return
+  }
+  
   loading.value = true
   try {
-    const bookId = parseInt(route.params.id)
     const formData = new FormData()
     formData.append('file', file)
     
-    // Upload to read vibe endpoint (we'll need to create this or use existing)
-    const response = await api.post(`/books/${bookId}/read-vibe`, formData, {
+    // Upload to the correct read vibe photo endpoint
+    const response = await api.post(`/reads/${read.id}/vibe-photo`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
     
+    // Update the read with the new photo URL
     reads.value[index].read_vibe_photo_url = response.data.read_vibe_photo_url
   } catch (err) {
     error.value = err.response?.data?.detail || 'Failed to upload photo'
@@ -745,6 +755,55 @@ const formatDate = (dateString) => {
   if (!dateString) return ''
   const date = new Date(dateString)
   return date.toLocaleDateString()
+}
+
+// Calculate points for a specific read
+const calculateReadPoints = (read) => {
+  if (!formData.value.book_type || read.read_status !== 'READ') {
+    return {
+      base: 0,
+      lengthAddons: 0,
+      allegory: 0,
+      reasonable: 0
+    }
+  }
+  
+  // Base points by book type
+  const basePointsMap = {
+    'FICTION': 1.0,
+    'NONFICTION': 1.5,
+    'YA': 0.75,
+    'CHILDRENS': 0.5,
+    'COMIC': 0.5,
+    'NOVELLA': 0.5,
+    'SHORT_STORY': 0.1,
+    'OTHER': 1.0
+  }
+  
+  const base = read.overrideBasePoints && read.base_points ? read.base_points : (basePointsMap[formData.value.book_type] || 1.0)
+  
+  // Length add-ons
+  let lengthAddons = 0
+  if (formData.value.page_count) {
+    const effectivePages = formData.value.page_count + 13 // Grace buffer
+    if (effectivePages >= 500) {
+      lengthAddons = 1.0
+      const pagesOverFirst = effectivePages - 500
+      lengthAddons += Math.floor(pagesOverFirst / 100) * 1.0
+    }
+  }
+  
+  // Calculate totals
+  const total = base + lengthAddons
+  const allegory = read.is_reread ? total * 0.5 : total
+  const reasonable = total
+  
+  return {
+    base,
+    lengthAddons,
+    allegory,
+    reasonable
+  }
 }
 
 watch(() => booksStore.currentBook, () => {

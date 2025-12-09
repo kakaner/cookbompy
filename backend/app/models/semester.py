@@ -19,4 +19,5 @@ class Semester(Base):
     
     # Relationships
     user = relationship("User", back_populates="semesters")
+    comments = relationship("Comment", back_populates="semester", cascade="all, delete-orphan")
 

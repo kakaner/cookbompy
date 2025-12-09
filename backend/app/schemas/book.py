@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, computed_field
 from typing import Optional, List
 from datetime import date, datetime
 from app.core.enums import Format, BookType, ReadStatus, DescriptionSource
@@ -101,6 +101,43 @@ class BookResponse(BookBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
     
+    @computed_field
+    @property
+    def read_status(self) -> str:
+        """Compute read_status from the most recent read"""
+        reads_list = self.reads if self.reads is not None else []
+        if not reads_list:
+            return "UNREAD"
+        
+        # Find the most recent read by date_finished, then date_started, then created_at
+        most_recent = None
+        most_recent_date = None
+        
+        for read in reads_list:
+            # Prioritize date_finished, then date_started, then created_at
+            read_date = None
+            if hasattr(read, 'date_finished') and read.date_finished:
+                read_date = read.date_finished
+            elif hasattr(read, 'date_started') and read.date_started:
+                read_date = read.date_started
+            elif hasattr(read, 'created_at') and read.created_at:
+                read_date = read.created_at.date() if isinstance(read.created_at, datetime) else read.created_at
+            
+            if read_date:
+                if most_recent_date is None or read_date > most_recent_date:
+                    most_recent_date = read_date
+                    most_recent = read
+        
+        # If no dates found, use the most recently created read
+        if most_recent is None and reads_list:
+            try:
+                most_recent = max(reads_list, key=lambda r: r.created_at if hasattr(r, 'created_at') and r.created_at else datetime.min)
+            except (ValueError, TypeError):
+                # Fallback to first read if max fails
+                most_recent = reads_list[0] if reads_list else None
+        
+        return most_recent.read_status if most_recent and hasattr(most_recent, 'read_status') else "UNREAD"
+    
     class Config:
         from_attributes = True
 
@@ -127,6 +164,24 @@ class BookSearchResult(BaseModel):
     genres: Optional[List[str]] = None
     cover_url: Optional[str] = None
     source: str  # "goodreads", "google_books", "open_library"
+
+
+class ExistingBookResult(BaseModel):
+    """Existing book in the database that can be linked to"""
+    id: int
+    title: str
+    author: str
+    isbn_10: Optional[str] = None
+    isbn_13: Optional[str] = None
+    publication_date: Optional[date] = None
+    publisher: Optional[str] = None
+    page_count: Optional[int] = None
+    cover_image_url: Optional[str] = None
+    owner_username: str
+    owner_display_name: Optional[str] = None
+    owner_id: int
+    is_my_book: bool  # True if this book belongs to the current user
+    read_count: int  # Number of reads for this book
 
 
 # Import ReadResponse and rebuild models to resolve forward references

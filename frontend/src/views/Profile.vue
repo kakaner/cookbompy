@@ -146,6 +146,17 @@
             <option :value="200">200 bokos</option>
           </select>
         </div>
+
+        <!-- Default Home Page -->
+        <div class="preference-field">
+          <label class="preference-label">Default Home Page</label>
+          <p class="preference-hint">Where to redirect when visiting the home page</p>
+          <select v-model="preferences.default_home_page" class="form-select" @change="savePreferences">
+            <option value="library">Libbery</option>
+            <option value="semesters">Semesters</option>
+            <option value="statistics">Statistics</option>
+          </select>
+        </div>
       </div>
     </div>
   </div>
@@ -168,7 +179,8 @@ const preferences = ref({
   display_name: '',
   default_book_format: null,
   color_theme: 'terracotta',
-  default_page_size: 50
+  default_page_size: 50,
+  default_home_page: 'library'
 })
 
 const formatOptions = [
@@ -256,7 +268,8 @@ const savePreferences = async () => {
       display_name: preferences.value.display_name || null,
       default_book_format: preferences.value.default_book_format || null,
       color_theme: preferences.value.color_theme,
-      default_page_size: preferences.value.default_page_size
+      default_page_size: preferences.value.default_page_size,
+      default_home_page: preferences.value.default_home_page || 'library'
     })
     
     // Update auth store
@@ -281,7 +294,8 @@ const loadPreferences = () => {
       display_name: authStore.user.display_name || '',
       default_book_format: authStore.user.default_book_format || null,
       color_theme: authStore.user.color_theme || 'terracotta',
-      default_page_size: authStore.user.default_page_size || 50
+      default_page_size: authStore.user.default_page_size || 50,
+      default_home_page: authStore.user.default_home_page || 'library'
     }
   }
 }

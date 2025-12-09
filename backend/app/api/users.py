@@ -20,6 +20,7 @@ class UserPreferencesUpdate(BaseModel):
     default_book_format: Optional[str] = Field(None, max_length=50)  # Format enum value as string
     color_theme: Optional[str] = Field(None, max_length=50)
     default_page_size: Optional[int] = Field(None, ge=25, le=200)
+    default_home_page: Optional[str] = Field(None, description="Default home page: library, semesters, or statistics")
 
 
 class UserResponse(BaseModel):
@@ -33,6 +34,7 @@ class UserResponse(BaseModel):
     default_book_format: Optional[str] = None
     color_theme: Optional[str] = None
     default_page_size: Optional[int] = None
+    default_home_page: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -52,7 +54,8 @@ def get_current_user_info(
         profile_photo_url=current_user.profile_photo_url,
         default_book_format=current_user.default_book_format,
         color_theme=current_user.color_theme,
-        default_page_size=current_user.default_page_size
+        default_page_size=current_user.default_page_size,
+        default_home_page=current_user.default_home_page or 'library'
     )
 
 
@@ -80,7 +83,8 @@ def update_user_preferences(
         profile_photo_url=current_user.profile_photo_url,
         default_book_format=current_user.default_book_format,
         color_theme=current_user.color_theme,
-        default_page_size=current_user.default_page_size
+        default_page_size=current_user.default_page_size,
+        default_home_page=current_user.default_home_page or 'library'
     )
 
 
@@ -108,7 +112,8 @@ async def upload_profile_photo(
         profile_photo_url=current_user.profile_photo_url,
         default_book_format=current_user.default_book_format,
         color_theme=current_user.color_theme,
-        default_page_size=current_user.default_page_size
+        default_page_size=current_user.default_page_size,
+        default_home_page=current_user.default_home_page or 'library'
     )
 
 
@@ -131,6 +136,7 @@ def delete_profile_photo(
         profile_photo_url=current_user.profile_photo_url,
         default_book_format=current_user.default_book_format,
         color_theme=current_user.color_theme,
-        default_page_size=current_user.default_page_size
+        default_page_size=current_user.default_page_size,
+        default_home_page=current_user.default_home_page or 'library'
     )
 

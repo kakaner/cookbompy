@@ -54,4 +54,5 @@ class Book(Base):
     # Relationships
     user = relationship("User", back_populates="books")
     reads = relationship("Read", back_populates="book", cascade="all, delete-orphan")
+    shareable_links = relationship("ShareableLink", back_populates="book", cascade="all, delete-orphan")
 

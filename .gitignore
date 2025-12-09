@@ -52,5 +52,6 @@ playwright-report/
 .DS_Store
 Thumbs.db
 
-bibliotheca/
+bibliotheca*
 PHASE*
+*ambient*

@@ -1,20 +1,26 @@
 <template>
   <div class="container">
     <div class="section-header">
-      <h2 class="section-title">Library</h2>
+      <h2 class="section-title">Libbery</h2>
       <p class="section-subtitle">Your personal boko collection</p>
     </div>
 
-    <!-- Search and Filters -->
+    <!-- Statistics Summary -->
+    <StatisticsSummary />
+
+    <!-- Search and Controls -->
     <div class="library-controls">
       <div class="search-container">
         <input
           v-model="searchQuery"
           type="text"
           class="search-input"
-          placeholder="Search books by title, author..."
+          placeholder="Search books by title, author, ISBN... (try: author:Morrison, type:FICTION, format:audiobook, S42)"
           @input="handleSearch"
         />
+        <div v-if="searchQuery" class="search-hint">
+          <small>Tip: Use <code>author:</code>, <code>type:</code>, <code>format:</code>, <code>S42</code> for advanced search</small>
+        </div>
       </div>
       
       <div class="controls-right">
@@ -34,12 +40,32 @@
             ☰
           </button>
         </div>
-        <router-link to="/books/add" class="btn btn-primary">
-          + Add Boko
-        </router-link>
       </div>
     </div>
 
+    <!-- Filters -->
+    <BookFilters
+      :sort="currentSort"
+      :formats="currentFormats"
+      :bookTypes="currentBookTypes"
+      :readStatus="currentReadStatus"
+      :hasReview="currentHasReview"
+      :language="currentLanguage"
+      :author="currentAuthor"
+      @update:sort="onSortChange"
+      @update:formats="onFormatsChange"
+      @update:bookTypes="onBookTypesChange"
+      @update:readStatus="onReadStatusChange"
+      @update:hasReview="onHasReviewChange"
+      @update:language="onLanguageChange"
+      @update:author="onAuthorChange"
+      @clear="clearAllFilters"
+    />
+
+    <!-- Active Filters Description -->
+    <div v-if="activeFiltersDescription" class="active-filters-description">
+      {{ activeFiltersDescription }}
+    </div>
 
     <!-- Loading State -->
     <div v-if="booksStore.loading" class="loading">
@@ -87,11 +113,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBooksStore } from '../stores/books'
 import BookCard from '../components/BookCard.vue'
-import { FORMAT_OPTIONS } from '../utils/formats'
+import StatisticsSummary from '../components/StatisticsSummary.vue'
+import BookFilters from '../components/BookFilters.vue'
+import { FORMAT_OPTIONS, getFormatDisplayName } from '../utils/formats'
 
 const router = useRouter()
 const booksStore = useBooksStore()
@@ -100,18 +128,212 @@ const viewMode = ref('grid')
 const searchQuery = ref('')
 const formatOptions = FORMAT_OPTIONS
 
+// Filter state
+const currentSort = ref('date_read_desc')
+const currentFormats = ref([])
+const currentBookTypes = ref([])
+const currentReadStatus = ref(null)
+const currentHasReview = ref(null)
+const currentLanguage = ref(null)
+const currentAuthor = ref(null)
+
 // Debounce search
 let searchTimeout = null
 const handleSearch = () => {
   clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
-    booksStore.setFilter('search', searchQuery.value || null)
-    booksStore.fetchBooks({ page: 1 })
+    applyFilters()
   }, 500)
 }
 
+const onSortChange = (sort) => {
+  currentSort.value = sort
+  applyFilters()
+}
+
+const onFormatsChange = (formats) => {
+  currentFormats.value = formats
+  applyFilters()
+}
+
+const onBookTypesChange = (bookTypes) => {
+  currentBookTypes.value = bookTypes
+  applyFilters()
+}
+
+const onReadStatusChange = (readStatus) => {
+  currentReadStatus.value = readStatus
+  applyFilters()
+}
+
+const onHasReviewChange = (hasReview) => {
+  currentHasReview.value = hasReview
+  applyFilters()
+}
+
+const onLanguageChange = (language) => {
+  currentLanguage.value = language
+  applyFilters()
+}
+
+const onAuthorChange = (author) => {
+  currentAuthor.value = author
+  applyFilters()
+}
+
+// Human-readable filter description
+const activeFiltersDescription = computed(() => {
+  const parts = []
+  
+  // Search query
+  if (searchQuery.value) {
+    parts.push(`searching for "${searchQuery.value}"`)
+  }
+  
+  // Sort
+  const sortLabels = {
+    'date_read_desc': 'sorted by most recently read',
+    'date_read_asc': 'sorted by oldest read',
+    'title_asc': 'sorted by title (A-Z)',
+    'title_desc': 'sorted by title (Z-A)',
+    'author_asc': 'sorted by author (A-Z)',
+    'author_desc': 'sorted by author (Z-A)',
+    'date_added_desc': 'sorted by date added (newest)',
+    'date_added_asc': 'sorted by date added (oldest)',
+    'publication_date_desc': 'sorted by publication date (newest)',
+    'publication_date_asc': 'sorted by publication date (oldest)',
+    'format': 'sorted by format',
+    'semester_desc': 'sorted by semester (most recent)',
+    'semester_asc': 'sorted by semester (oldest)'
+  }
+  if (currentSort.value && currentSort.value !== 'date_read_desc') {
+    parts.push(sortLabels[currentSort.value] || 'sorted')
+  }
+  
+  // Formats
+  if (currentFormats.value && currentFormats.value.length > 0) {
+    const formatNames = currentFormats.value.map(f => getFormatDisplayName(f))
+    if (formatNames.length === 1) {
+      parts.push(`format: ${formatNames[0]}`)
+    } else {
+      parts.push(`formats: ${formatNames.join(', ')}`)
+    }
+  }
+  
+  // Book Types
+  if (currentBookTypes.value && currentBookTypes.value.length > 0) {
+    const typeLabels = {
+      'FICTION': 'Fiction',
+      'NONFICTION': 'Non-fiction',
+      'YA': 'Young Adult',
+      'CHILDRENS': "Children's",
+      'COMIC': 'Comic',
+      'NOVELLA': 'Novella',
+      'SHORT_STORY': 'Short Story',
+      'OTHER': 'Other'
+    }
+    const typeNames = currentBookTypes.value.map(t => typeLabels[t] || t)
+    if (typeNames.length === 1) {
+      parts.push(`type: ${typeNames[0]}`)
+    } else {
+      parts.push(`types: ${typeNames.join(', ')}`)
+    }
+  }
+  
+  // Read Status
+  if (currentReadStatus.value) {
+    const statusLabels = {
+      'READ': 'read',
+      'READING': 'currently reading',
+      'UNREAD': 'unread',
+      'DNF': 'did not finish'
+    }
+    parts.push(`status: ${statusLabels[currentReadStatus.value] || currentReadStatus.value}`)
+  }
+  
+  // Has Review
+  if (currentHasReview.value === true) {
+    parts.push('with reviews')
+  } else if (currentHasReview.value === false) {
+    parts.push('without reviews')
+  }
+  
+  // Language
+  if (currentLanguage.value) {
+    parts.push(`language: ${currentLanguage.value}`)
+  }
+  
+  // Author
+  if (currentAuthor.value) {
+    parts.push(`author: ${currentAuthor.value}`)
+  }
+  
+  if (parts.length === 0) {
+    return null
+  }
+  
+  return `Showing bokos ${parts.join(', ')}`
+})
+
+const clearAllFilters = () => {
+  searchQuery.value = ''
+  currentSort.value = 'date_read_desc'
+  currentFormats.value = []
+  currentBookTypes.value = []
+  currentReadStatus.value = null
+  currentHasReview.value = null
+  currentLanguage.value = null
+  currentAuthor.value = null
+  booksStore.clearFilters()
+  applyFilters()
+}
+
+const applyFilters = async () => {
+  const params = {
+    page: 1,
+    sort: currentSort.value,
+    search: searchQuery.value || null
+  }
+  
+  if (currentFormats.value.length > 0) {
+    params.format = currentFormats.value
+  }
+  
+  if (currentBookTypes.value.length > 0) {
+    params.book_type = currentBookTypes.value
+  }
+  
+  if (currentReadStatus.value) {
+    params.read_status = currentReadStatus.value
+  }
+  
+  if (currentHasReview.value !== null) {
+    params.has_review = currentHasReview.value
+  }
+  
+  if (currentLanguage.value) {
+    params.language = currentLanguage.value
+  }
+  
+  if (currentAuthor.value) {
+    params.author = currentAuthor.value
+  }
+  
+  await booksStore.fetchBooks(params)
+}
+
 const goToPage = (page) => {
-  booksStore.fetchBooks({ page })
+  const params = { page }
+  if (currentSort.value) params.sort = currentSort.value
+  if (currentFormats.value.length > 0) params.format = currentFormats.value
+  if (currentBookTypes.value.length > 0) params.book_type = currentBookTypes.value
+  if (currentReadStatus.value) params.read_status = currentReadStatus.value
+  if (currentHasReview.value !== null) params.has_review = currentHasReview.value
+  if (currentLanguage.value) params.language = currentLanguage.value
+  if (currentAuthor.value) params.author = currentAuthor.value
+  if (searchQuery.value) params.search = searchQuery.value
+  
+  booksStore.fetchBooks(params)
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
@@ -156,18 +378,34 @@ onMounted(async () => {
 
 .search-input {
   width: 100%;
-  padding: 0.875rem 1.25rem;
-  border: 2px solid var(--color-border);
+  padding: 1rem 1.5rem;
+  border: 2px solid var(--color-primary);
   border-radius: var(--radius-sm);
-  font-size: 1rem;
+  font-size: 1.05rem;
   font-family: var(--font-body);
+  background: var(--color-background);
+  box-shadow: 0 2px 8px rgba(155, 72, 25, 0.15);
   transition: all var(--transition-fast);
 }
 
 .search-input:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(155, 72, 25, 0.1);
+  box-shadow: 0 4px 12px rgba(155, 72, 25, 0.25);
+  transform: translateY(-1px);
+}
+
+.search-hint {
+  margin-top: 0.5rem;
+  color: var(--color-text-light);
+  font-size: 0.75rem;
+}
+
+.search-hint code {
+  background: var(--color-background);
+  padding: 0.125rem 0.25rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
 }
 
 .controls-right {
@@ -298,6 +536,17 @@ onMounted(async () => {
 .pagination-info {
   font-size: 0.95rem;
   color: var(--color-text-light);
+}
+
+.active-filters-description {
+  padding: 0.75rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  font-style: italic;
 }
 
 @media (max-width: 768px) {

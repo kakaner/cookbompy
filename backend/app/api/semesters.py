@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.book import Book
 from app.models.semester import Semester
 from app.models.read import Read
+from app.models.comment import Comment
 from app.schemas.semester import (
     SemesterUpdate,
     SemesterResponse,
@@ -117,18 +118,27 @@ def _calculate_semester_stats(db: Session, user_id: int, semester_number: int) -
     if not reads:
         return SemesterStats()
     
-    # Get books for these reads to calculate pages
-    book_ids = [r.book_id for r in reads]
-    books = db.query(Book).filter(Book.id.in_(book_ids)).all()
-    book_dict = {b.id: b for b in books}
+    # Get read IDs
+    read_ids = [r.id for r in reads]
     
-    total_pages = sum(book_dict.get(r.book_id, Book()).page_count or 0 for r in reads)
+    # Count reads without reviews (unviewnered)
+    total_unviewnered = sum(1 for r in reads if not r.review or not r.review.strip())
+    
+    # Count reads with comments (commented)
+    commented_read_ids = db.query(Comment.read_id).filter(
+        Comment.read_id.in_(read_ids),
+        Comment.is_deleted == False
+    ).distinct().all()
+    # Extract read_id from tuples
+    commented_count = len(set(row[0] for row in commented_read_ids))
+    
     total_points_allegory = sum((r.calculated_points_allegory or 0) / 100.0 for r in reads)
     total_points_reasonable = sum((r.calculated_points_reasonable or 0) / 100.0 for r in reads)
     
     return SemesterStats(
         books_read=len(reads),  # Actually number of reads
-        total_pages=total_pages,
+        total_unviewnered=total_unviewnered,
+        commented=commented_count,
         avg_points_allegory=total_points_allegory / len(reads) if reads else 0,
         avg_points_reasonable=total_points_reasonable / len(reads) if reads else 0,
         total_points_allegory=total_points_allegory,
@@ -256,6 +266,7 @@ def get_semester(
                 "author": book.author,
                 "cover_image_url": book.cover_image_url,
                 "format": book.format.value if book.format else None,
+                "book_type": book.book_type.value if book.book_type else None,
                 "date_finished": read.date_finished.isoformat() if read.date_finished else None,
                 "page_count": book.page_count,
                 "is_memorable": read.is_memorable,

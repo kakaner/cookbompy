@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import date, datetime
+from app.schemas.comment import UserBasic
 
 
 class ReadBase(BaseModel):
@@ -13,6 +14,18 @@ class ReadBase(BaseModel):
     read_vibe_photo_url: Optional[str] = Field(None, max_length=500)
     base_points: Optional[float] = Field(None, description="Override base points (will set base_points_overridden=True)")
     is_memorable: bool = False
+    rating: Optional[float] = Field(None, description="Rating from 0.5 to 10.0 in 0.5 increments")
+    
+    @field_validator('rating')
+    @classmethod
+    def validate_rating(cls, v):
+        if v is not None:
+            if v < 0.5 or v > 10.0:
+                raise ValueError('Rating must be between 0.5 and 10.0')
+            # Check if it's a valid 0.5 increment
+            if (v * 2) % 1 != 0:
+                raise ValueError('Rating must be in 0.5 increments (0.5, 1.0, 1.5, ..., 10.0)')
+        return v
 
 
 class ReadCreate(ReadBase):
@@ -30,6 +43,18 @@ class ReadUpdate(BaseModel):
     read_vibe_photo_url: Optional[str] = Field(None, max_length=500)
     base_points: Optional[float] = Field(None, description="Override base points")
     is_memorable: Optional[bool] = None
+    rating: Optional[float] = Field(None, description="Rating from 0.5 to 10.0 in 0.5 increments")
+    
+    @field_validator('rating')
+    @classmethod
+    def validate_rating(cls, v):
+        if v is not None:
+            if v < 0.5 or v > 10.0:
+                raise ValueError('Rating must be between 0.5 and 10.0')
+            # Check if it's a valid 0.5 increment
+            if (v * 2) % 1 != 0:
+                raise ValueError('Rating must be in 0.5 increments (0.5, 1.0, 1.5, ..., 10.0)')
+        return v
 
 
 class ReadPoints(BaseModel):
@@ -48,11 +73,14 @@ class ReadResponse(ReadBase):
     id: int
     book_id: int
     user_id: int
+    user: Optional[UserBasic] = None  # User who made this read
     base_points: Optional[float] = None
     base_points_overridden: bool = False
     calculated_points_allegory: Optional[float] = None
     calculated_points_reasonable: Optional[float] = None
     points: Optional[dict] = None  # Calculated breakdown
+    rating: Optional[float] = None  # Rating from 0.5 to 10.0
+    comment_count: Optional[int] = 0  # Number of comments on this read
     created_at: datetime
     updated_at: Optional[datetime] = None
     

@@ -25,7 +25,9 @@
       >
         <!-- Timeline Line -->
         <div class="timeline-line"></div>
-        <div class="timeline-dot" :class="{ 'is-current': semester.is_current }"></div>
+        <div class="timeline-dot" :class="{ 'is-current': semester.is_current }">
+          <span class="timeline-dot-number">{{ semester.semester_number }}</span>
+        </div>
 
         <!-- Semester Content -->
         <div class="semester-content">
@@ -70,8 +72,12 @@
               <span class="stat-label">Books</span>
             </div>
             <div class="stat-item">
-              <span class="stat-value">{{ formatNumber(semester.stats.total_pages) }}</span>
-              <span class="stat-label">Pages</span>
+              <span class="stat-value">{{ semester.stats.total_unviewnered }}</span>
+              <span class="stat-label">Unviewnered</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-value">{{ semester.stats.commented }}</span>
+              <span class="stat-label">Commented</span>
             </div>
             <div class="stat-item">
               <span class="stat-value">{{ semester.stats.total_points_allegory.toFixed(1) }}</span>
@@ -82,9 +88,10 @@
           <!-- Book Previews -->
           <div v-if="semester.book_previews && semester.book_previews.length > 0" class="book-previews">
             <div class="preview-covers">
-              <div
+              <router-link
                 v-for="book in semester.book_previews"
                 :key="book.id"
+                :to="`/books/${book.id}`"
                 class="preview-cover"
                 :class="{ 'memorable': book.is_memorable }"
                 :title="book.title"
@@ -94,7 +101,7 @@
                   {{ book.title.charAt(0) }}
                 </div>
                 <span v-if="book.is_memorable" class="memorable-indicator">⭐</span>
-              </div>
+              </router-link>
             </div>
           </div>
 
@@ -229,20 +236,35 @@ const saveCustomName = async (semesterNumber) => {
 
 .timeline-dot {
   position: absolute;
-  left: calc(-2rem - 6px);
-  top: 1rem;
-  width: 14px;
-  height: 14px;
+  left: calc(-2rem - 10px);
+  top: 0.75rem;
+  width: 32px;
+  height: 32px;
   background: var(--color-surface);
-  border: 3px solid var(--color-border);
+  border: 2px solid var(--color-border);
   border-radius: 50%;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.timeline-dot-number {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text);
+  font-family: var(--font-heading);
 }
 
 .timeline-dot.is-current {
   background: var(--color-primary);
   border-color: var(--color-primary);
   box-shadow: 0 0 0 4px var(--color-primary-light);
+}
+
+.timeline-dot.is-current .timeline-dot-number {
+  color: var(--color-background);
 }
 
 .semester-content {
@@ -441,7 +463,13 @@ const saveCustomName = async (semesterNumber) => {
   }
 
   .timeline-dot {
-    left: calc(-1rem - 6px);
+    left: calc(-1rem - 10px);
+    width: 28px;
+    height: 28px;
+  }
+
+  .timeline-dot-number {
+    font-size: 0.7rem;
   }
 
   .stats-grid {
@@ -477,7 +505,10 @@ const saveCustomName = async (semesterNumber) => {
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   cursor: pointer;
-  transition: transform var(--transition-fast);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  display: block;
+  text-decoration: none;
+  color: inherit;
 }
 
 .preview-cover:hover {
