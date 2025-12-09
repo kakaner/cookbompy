@@ -15,7 +15,8 @@ class Book(Base):
     
     # Core fields
     title = Column(String(500), nullable=False, index=True)
-    author = Column(String(500), nullable=False, index=True)
+    author = Column(String(500), nullable=True, index=True)  # Legacy field, will be removed after migration
+    author_id = Column(Integer, ForeignKey("authors.id"), nullable=True, index=True)
     isbn_10 = Column(String(13), nullable=True, index=True)
     isbn_13 = Column(String(17), nullable=True, index=True)
     publication_date = Column(Date, nullable=True)
@@ -53,6 +54,7 @@ class Book(Base):
     
     # Relationships
     user = relationship("User", back_populates="books")
+    author_obj = relationship("Author", back_populates="books")  # Author relationship (named author_obj to avoid conflict with author column)
     reads = relationship("Read", back_populates="book", cascade="all, delete-orphan")
     shareable_links = relationship("ShareableLink", back_populates="book", cascade="all, delete-orphan")
 

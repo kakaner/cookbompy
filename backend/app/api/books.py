@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models.book import Book
 from app.models.user import User
 from app.models.read import Read
+from app.models.author import Author
 from app.schemas.book import BookCreate, BookUpdate, BookResponse, BookListResponse, BookSearchResult, ExistingBookResult
 from app.core.security import get_current_user
 from app.core.enums import Format, BookType, ReadStatus
@@ -17,6 +18,7 @@ from app.core.semesters import calculate_semester_number
 from app.services.book_search import SearchService
 from app.services.synopsis_fetch import SynopsisFetchService
 from app.services.file_upload import FileUploadService
+from app.services.author_service import find_or_create_author
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -119,10 +121,16 @@ def create_book(
         if not existing_book:
             raise HTTPException(status_code=404, detail="Book to link to not found")
         
-        # Eager load reads for response
+        # Eager load author and reads for response
         from sqlalchemy.orm import joinedload
-        book = db.query(Book).options(joinedload(Book.reads)).filter(Book.id == existing_book.id).first()
+        book = db.query(Book).options(
+            joinedload(Book.author_obj),
+            joinedload(Book.reads)
+        ).filter(Book.id == existing_book.id).first()
         return book
+    
+    # Find or create author
+    author = find_or_create_author(db, book_data.author)
     
     # Auto-fetch synopsis if not provided
     description = book_data.description
@@ -132,7 +140,7 @@ def create_book(
         synopsis, source = synopsis_service.fetch_synopsis(
             isbn=book_data.isbn_13 or book_data.isbn_10,
             title=book_data.title,
-            author=book_data.author
+            author=author.name
         )
         if synopsis:
             description = synopsis
@@ -142,7 +150,8 @@ def create_book(
     book = Book(
         user_id=current_user.id,
         title=book_data.title,
-        author=book_data.author,
+        author=book_data.author,  # Keep legacy field for backward compatibility
+        author_id=author.id,
         isbn_10=book_data.isbn_10,
         isbn_13=book_data.isbn_13,
         publication_date=book_data.publication_date,
@@ -173,9 +182,12 @@ def create_book(
     db.commit()
     db.refresh(book)
     
-    # Eager load reads for response
+    # Eager load author and reads for response
     from sqlalchemy.orm import joinedload
-    book = db.query(Book).options(joinedload(Book.reads)).filter(Book.id == book.id).first()
+    book = db.query(Book).options(
+        joinedload(Book.author_obj),
+        joinedload(Book.reads)
+    ).filter(Book.id == book.id).first()
     
     return book
 
@@ -234,10 +246,15 @@ def list_books(
     if language:
         query = query.filter(Book.language.ilike(f"%{language}%"))
     
-    # Apply author filter
+    # Apply author filter - join with Author table
     if author or search_params.get("author"):
         author_term = author or search_params.get("author")
-        query = query.filter(Book.author.ilike(f"%{author_term}%"))
+        query = query.join(Author, Book.author_id == Author.id).filter(
+            or_(
+                Author.name.ilike(f"%{author_term}%"),
+                Author.normalized_name.ilike(f"%{author_term.lower()}%")
+            )
+        )
     
     # Apply publisher filter
     if publisher:
@@ -263,23 +280,15 @@ def list_books(
             )
         )
     
-    # Apply general search (title, author, description)
-    if search_params.get("general"):
-        search_term = f"%{search_params['general']}%"
-        query = query.filter(
+    # Apply general search (title, author, description) - need to outerjoin Author
+    if search_params.get("general") or (search and not any(search_params.values())):
+        search_term = f"%{search_params.get('general', search)}%"
+        # Use outerjoin to include books even if author_id is null (backward compatibility)
+        query = query.outerjoin(Author, Book.author_id == Author.id).filter(
             or_(
                 Book.title.ilike(search_term),
-                Book.author.ilike(search_term),
-                Book.description.ilike(search_term)
-            )
-        )
-    elif search and not any(search_params.values()):
-        # Fallback: if search doesn't match any syntax, treat as general
-        search_term = f"%{search}%"
-        query = query.filter(
-            or_(
-                Book.title.ilike(search_term),
-                Book.author.ilike(search_term),
+                Book.author.ilike(search_term),  # Legacy field
+                Author.name.ilike(search_term),
                 Book.description.ilike(search_term)
             )
         )
@@ -392,9 +401,15 @@ def list_books(
     elif sort == SortOption.TITLE_DESC:
         query = query.order_by(Book.title.desc())
     elif sort == SortOption.AUTHOR_ASC:
-        query = query.order_by(Book.author.asc())
+        # Use outerjoin to handle null author_id
+        if Author not in [join.right for join in query.column_descriptions if hasattr(join, 'right')]:
+            query = query.outerjoin(Author, Book.author_id == Author.id)
+        query = query.order_by(func.coalesce(Author.name, Book.author).asc())
     elif sort == SortOption.AUTHOR_DESC:
-        query = query.order_by(Book.author.desc())
+        # Use outerjoin to handle null author_id
+        if Author not in [join.right for join in query.column_descriptions if hasattr(join, 'right')]:
+            query = query.outerjoin(Author, Book.author_id == Author.id)
+        query = query.order_by(func.coalesce(Author.name, Book.author).desc())
     elif sort == SortOption.DATE_ADDED_ASC:
         query = query.order_by(Book.created_at.asc())
     elif sort == SortOption.DATE_ADDED_DESC:
@@ -466,8 +481,11 @@ def list_books(
             Book.created_at.desc()
         )
     
-    # Apply pagination
+    # Apply pagination - eager load author relationship
+    from sqlalchemy.orm import joinedload
     offset = (page - 1) * page_size
+    # Remove duplicates if joins were added, and eager load author
+    query = query.options(joinedload(Book.author_obj)).distinct()
     books = query.offset(offset).limit(page_size).all()
     
     # Calculate total pages
@@ -491,6 +509,7 @@ def get_book(
     """Get a single book by ID"""
     from sqlalchemy.orm import joinedload
     book = db.query(Book).options(
+        joinedload(Book.author_obj),
         joinedload(Book.reads).joinedload(Read.user)
     ).filter(
         Book.id == book_id,
@@ -522,14 +541,25 @@ def update_book(
     
     # Update only provided fields (no reading fields - those are in Read model)
     update_data = book_data.model_dump(exclude_unset=True)
+    
+    # Handle author update separately
+    if "author" in update_data:
+        author_name = update_data.pop("author")
+        author = find_or_create_author(db, author_name)
+        book.author_id = author.id
+        book.author = author_name  # Keep legacy field
+    
     for field, value in update_data.items():
         setattr(book, field, value)
     
     db.commit()
     db.refresh(book)
     
-    # Reload with reads
-    book = db.query(Book).options(joinedload(Book.reads)).filter(Book.id == book.id).first()
+    # Reload with author and reads
+    book = db.query(Book).options(
+        joinedload(Book.author_obj),
+        joinedload(Book.reads)
+    ).filter(Book.id == book.id).first()
     
     return book
 
@@ -605,7 +635,11 @@ def search_existing_books(
     """Search for existing books in the database that can be linked to"""
     from sqlalchemy.orm import joinedload
     
-    query = db.query(Book).options(joinedload(Book.user), joinedload(Book.reads))
+    query = db.query(Book).options(
+        joinedload(Book.user),
+        joinedload(Book.author_obj),
+        joinedload(Book.reads)
+    )
     
     # Build search conditions
     conditions = []
@@ -628,10 +662,23 @@ def search_existing_books(
     title_author_conditions = []
     
     if title:
-        title_author_conditions.append(func.lower(Book.title).contains(func.lower(title)))
+        title_lower = title.lower().strip()
+        # Normalize title by removing common prefixes for better matching
+        # This handles cases like "remains of the day" matching "The Remains of the Day"
+        # Try matching with the original title, and also with normalized versions
+        # We'll use a simple contains check which should work for most cases
+        # The database contains check is case-insensitive, so "remains" will match "Remains"
+        title_author_conditions.append(func.lower(Book.title).contains(title_lower))
     
     if author:
-        title_author_conditions.append(func.lower(Book.author).contains(func.lower(author)))
+        # Search in both Author table and legacy author field
+        query = query.outerjoin(Author, Book.author_id == Author.id)
+        title_author_conditions.append(
+            or_(
+                func.lower(Book.author).contains(func.lower(author)),  # Legacy string field
+                func.lower(Author.name).contains(func.lower(author))  # Author object
+            )
+        )
     
     # If we have ISBN conditions, those are OR'd with title/author
     # If we have both title and author, they must BOTH match (AND)
@@ -676,7 +723,7 @@ def search_existing_books(
         result = ExistingBookResult(
             id=book.id,
             title=book.title,
-            author=book.author,
+            author=book.author_obj.name if book.author_obj else (book.author or "Unknown"),
             isbn_10=book.isbn_10,
             isbn_13=book.isbn_13,
             publication_date=book.publication_date,

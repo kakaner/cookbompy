@@ -49,7 +49,8 @@ def _get_book_previews(db: Session, user_id: int, semester_number: int, limit: i
     previews = []
     seen_book_ids = set()
     for read in reads:
-        book = db.query(Book).filter(Book.id == read.book_id).first()
+        from sqlalchemy.orm import joinedload
+        book = db.query(Book).options(joinedload(Book.author_obj)).filter(Book.id == read.book_id).first()
         if book and (book.cover_image_url or read.is_memorable):
             # Only include each book once
             if book.id not in seen_book_ids:
@@ -255,15 +256,16 @@ def get_semester(
     stats = _calculate_semester_stats(db, current_user.id, semester_number)
     
     # Convert reads to dict with book info, prioritizing memorable reads
+    from sqlalchemy.orm import joinedload
     books_data = []
     for read in reads:
-        book = db.query(Book).filter(Book.id == read.book_id).first()
+        book = db.query(Book).options(joinedload(Book.author_obj)).filter(Book.id == read.book_id).first()
         if book:
             books_data.append({
                 "id": book.id,
                 "read_id": read.id,
                 "title": book.title,
-                "author": book.author,
+                "author": book.author_obj.name if book.author_obj else (book.author or "Unknown"),
                 "cover_image_url": book.cover_image_url,
                 "format": book.format.value if book.format else None,
                 "book_type": book.book_type.value if book.book_type else None,

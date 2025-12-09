@@ -31,5 +31,7 @@ class User(Base):
     reads = relationship("Read", back_populates="user")
     comments = relationship("Comment", back_populates="user")
     comment_reactions = relationship("CommentReaction", back_populates="user")
+    author_progress = relationship("UserAuthorProgress", back_populates="user")
+    completion_achievements = relationship("CompletionAchievement", back_populates="user")
     shareable_links = relationship("ShareableLink", back_populates="user", cascade="all, delete-orphan")
 

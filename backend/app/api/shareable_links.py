@@ -221,7 +221,8 @@ def get_shared_book_by_token(
     # Load book with relationships
     from sqlalchemy.orm import joinedload
     book = db.query(Book).options(
-        joinedload(Book.user)
+        joinedload(Book.user),
+        joinedload(Book.author_obj)
     ).filter(Book.id == link.book_id).first()
     
     if not book:
@@ -256,7 +257,7 @@ def get_shared_book_by_token(
     return SharedBookResponse(
         id=book.id,
         title=book.title,
-        author=book.author,
+        author=book.author_obj.name if book.author_obj else (book.author or "Unknown"),
         isbn_10=book.isbn_10,
         isbn_13=book.isbn_13,
         publication_date=book.publication_date.isoformat() if book.publication_date else None,

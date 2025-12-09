@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import engine, Base
-from app.api import auth, books, semesters, users, reads, comments, statistics, shareable_links
+from app.api import auth, books, semesters, users, reads, comments, statistics, shareable_links, completionist
 import logging
 import os
 
@@ -41,6 +41,7 @@ app.include_router(users.router, prefix="/api")
 app.include_router(reads.router, prefix="/api")
 app.include_router(comments.router, prefix="/api")
 app.include_router(shareable_links.router, prefix="/api")
+app.include_router(completionist.router, prefix="/api")
 
 # Serve static files for media (covers, etc.)
 media_path = os.path.join(os.path.dirname(__file__), "..", "media")

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator, computed_field
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import date, datetime
 from app.core.enums import Format, BookType, ReadStatus, DescriptionSource
 
@@ -7,7 +7,7 @@ from app.core.enums import Format, BookType, ReadStatus, DescriptionSource
 class BookBase(BaseModel):
     """Base book schema with common fields"""
     title: str = Field(..., min_length=1, max_length=500)
-    author: str = Field(..., min_length=1, max_length=500)
+    author: str = Field(..., min_length=1, max_length=500, description="Author name as string (will be resolved to Author entity)")
     isbn_10: Optional[str] = Field(None, max_length=13)
     isbn_13: Optional[str] = Field(None, max_length=17)
     publication_date: Optional[date] = None
@@ -54,7 +54,7 @@ class BookUpdate(BaseModel):
     """Schema for updating a book (all fields optional)"""
     title: Optional[str] = Field(None, min_length=1, max_length=500)
     base_points: Optional[float] = Field(None, description="Override base points (will set base_points_overridden=True)")
-    author: Optional[str] = Field(None, min_length=1, max_length=500)
+    author: Optional[Union[str, int]] = Field(None, description="Author name (string) or author_id (int)")
     isbn_10: Optional[str] = Field(None, max_length=13)
     isbn_13: Optional[str] = Field(None, max_length=17)
     publication_date: Optional[date] = None
@@ -97,9 +97,21 @@ class BookResponse(BookBase):
     """Schema for book response"""
     id: int
     user_id: int
+    author_id: Optional[int] = None
+    author_obj: Optional["AuthorResponse"] = None  # Full author object when loaded
     reads: List["ReadResponse"] = []  # List of reads for this book
     created_at: datetime
     updated_at: Optional[datetime] = None
+    
+    @computed_field
+    @property
+    def author_name(self) -> str:
+        """Get author name from author object or fallback to author field"""
+        if self.author_obj:
+            return self.author_obj.name
+        if isinstance(self.author, str):
+            return self.author
+        return ""
     
     @computed_field
     @property
@@ -184,8 +196,9 @@ class ExistingBookResult(BaseModel):
     read_count: int  # Number of reads for this book
 
 
-# Import ReadResponse and rebuild models to resolve forward references
+# Import ReadResponse and AuthorResponse and rebuild models to resolve forward references
 from app.schemas.read import ReadResponse
+from app.schemas.author import AuthorResponse
 
 # Rebuild models that use forward references
 BookResponse.model_rebuild()

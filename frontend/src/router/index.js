@@ -81,6 +81,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/completionist',
+    name: 'Completionist',
+    component: () => import('../views/Completionist.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/share/:token',
     name: 'ShareableView',
     component: () => import('../views/ShareableView.vue'),

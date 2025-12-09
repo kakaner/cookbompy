@@ -140,8 +140,13 @@ def get_reads_for_book(
     return reads
 
 
-def _normalize_book_identifier(title: str, author: str) -> tuple:
-    """Normalize book title and author for matching across users"""
+def _normalize_book_identifier(title: str, author) -> tuple:
+    """Normalize book title and author for matching across users
+    
+    Args:
+        title: Book title string
+        author: Author string or Author object (relationship)
+    """
     import re
     # Convert to lowercase, strip whitespace, and normalize multiple spaces to single space
     # Also remove common punctuation that might differ
@@ -151,8 +156,19 @@ def _normalize_book_identifier(title: str, author: str) -> tuple:
         normalized_title = re.sub(r'[.,;:!?\'"()]', '', normalized_title)
     else:
         normalized_title = ""
+    
+    # Handle author - could be string or Author object
+    author_str = None
     if author:
-        normalized_author = re.sub(r'\s+', ' ', author.lower().strip())
+        if hasattr(author, 'name'):  # Author object
+            author_str = author.name
+        elif isinstance(author, str):  # String (legacy)
+            author_str = author
+        else:
+            author_str = str(author)
+    
+    if author_str:
+        normalized_author = re.sub(r'\s+', ' ', author_str.lower().strip())
         # Remove common punctuation
         normalized_author = re.sub(r'[.,;:!?\'"()]', '', normalized_author)
     else:
@@ -167,18 +183,26 @@ def get_community_reads_for_book(
     current_user: User = Depends(get_current_user)
 ):
     """Get all reads for a book from all community users, matching by title and author"""
-    # Get the book to extract title and author
-    book = db.query(Book).filter(Book.id == book_id).first()
+    from sqlalchemy.orm import joinedload
+    # Get the book to extract title and author, eager load author relationship
+    book = db.query(Book).options(joinedload(Book.author_obj)).filter(Book.id == book_id).first()
     
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     
+    # Get author name - use author_obj relationship or legacy author string
+    author_for_match = None
+    if book.author_obj:  # Author relationship object
+        author_for_match = book.author_obj.name
+    elif book.author:  # Legacy string field
+        author_for_match = book.author
+    
     # Normalize title and author for matching
-    normalized_title, normalized_author = _normalize_book_identifier(book.title, book.author)
+    normalized_title, normalized_author = _normalize_book_identifier(book.title, author_for_match)
     
     # Find all books and match by normalized title and author
     # We fetch all books and normalize in Python for more reliable matching
-    all_books = db.query(Book).all()
+    all_books = db.query(Book).options(joinedload(Book.author_obj)).all()
     matching_book_ids = []
     
     # Also include the original book_id to ensure backwards compatibility
@@ -188,8 +212,15 @@ def get_community_reads_for_book(
         # Skip the original book (already added)
         if b.id == book_id:
             continue
+        
+        # Get author name for matching - use author_obj relationship or legacy author string
+        b_author_for_match = None
+        if b.author_obj:  # Author relationship object
+            b_author_for_match = b.author_obj.name
+        elif b.author:  # Legacy string field
+            b_author_for_match = b.author
             
-        b_normalized_title, b_normalized_author = _normalize_book_identifier(b.title, b.author)
+        b_normalized_title, b_normalized_author = _normalize_book_identifier(b.title, b_author_for_match)
         if b_normalized_title == normalized_title and b_normalized_author == normalized_author:
             matching_book_ids.append(b.id)
     

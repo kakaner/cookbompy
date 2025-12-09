@@ -49,7 +49,10 @@ class StatisticsService:
     def get_reads_query(self, user_id: int, time_dimension: str = "alltime", 
                        start_date: Optional[date] = None, end_date: Optional[date] = None):
         """Get base query for reads filtered by user and time"""
-        query = self.db.query(Read).join(Book).filter(
+        from sqlalchemy.orm import joinedload
+        query = self.db.query(Read).options(
+            joinedload(Read.book).joinedload(Book.author_obj)
+        ).join(Book).filter(
             Read.user_id == user_id,
             Read.read_status == "READ",
             Read.date_finished.isnot(None)
@@ -178,14 +181,22 @@ class StatisticsService:
         author_book_counts = defaultdict(set)
         
         for read in reads:
-            if read.book and read.book.author:
-                author_read_counts[read.book.author] += 1
-                author_book_counts[read.book.author].add(read.book_id)
+            if read.book:
+                # Get author name - use author_obj relationship or legacy author string
+                author_name = None
+                if read.book.author_obj:  # Author relationship object
+                    author_name = read.book.author_obj.name
+                elif read.book.author:  # Legacy string field
+                    author_name = read.book.author
+                
+                if author_name:
+                    author_read_counts[author_name] += 1
+                    author_book_counts[author_name].add(read.book_id)
         
         result = []
-        for author, read_count in sorted(author_read_counts.items(), key=lambda x: x[1], reverse=True)[:limit]:
+        for author_name, read_count in sorted(author_read_counts.items(), key=lambda x: x[1], reverse=True)[:limit]:
             result.append({
-                "author": author,
+                "author": author_name,
                 "read_count": read_count,
                 "unique_books": len(author_book_counts[author])
             })
@@ -377,15 +388,23 @@ class StatisticsService:
         for read in all_reads:
             if read.book:
                 # Normalize title and author for matching
-                normalized_title, normalized_author = self._normalize_book_identifier(read.book.title, read.book.author)
+                # Get author for normalization - use author_obj or legacy author field
+                author_for_norm = read.book.author_obj.name if read.book.author_obj else read.book.author
+                normalized_title, normalized_author = self._normalize_book_identifier(read.book.title, author_for_norm)
                 normalized_key = f"{normalized_title}|{normalized_author}"
                 
                 # Use canonical book_id (first one we see for this title+author)
                 if normalized_key not in title_author_map:
                     title_author_map[normalized_key] = read.book_id
+                    # Get author name - use author_obj relationship or legacy author string
+                    author_name = None
+                    if read.book.author_obj:  # Author relationship object
+                        author_name = read.book.author_obj.name
+                    elif read.book.author:  # Legacy string field
+                        author_name = read.book.author
                     book_info[read.book_id] = {
                         "title": read.book.title,
-                        "author": read.book.author
+                        "author": author_name or ""
                     }
                 
                 canonical_book_id = title_author_map[normalized_key]
@@ -419,8 +438,13 @@ class StatisticsService:
         
         return result
     
-    def _normalize_book_identifier(self, title: str, author: str) -> tuple:
-        """Normalize book title and author for matching across users"""
+    def _normalize_book_identifier(self, title: str, author) -> tuple:
+        """Normalize book title and author for matching across users
+        
+        Args:
+            title: Book title string
+            author: Author string or Author object (relationship)
+        """
         import re
         # Convert to lowercase, strip whitespace, and normalize multiple spaces to single space
         # Also remove common punctuation that might differ
@@ -430,8 +454,19 @@ class StatisticsService:
             normalized_title = re.sub(r'[.,;:!?\'"()]', '', normalized_title)
         else:
             normalized_title = ""
+        
+        # Handle author - could be string or Author object
+        author_str = None
         if author:
-            normalized_author = re.sub(r'\s+', ' ', author.lower().strip())
+            if hasattr(author, 'name'):  # Author object
+                author_str = author.name
+            elif isinstance(author, str):  # String (legacy)
+                author_str = author
+            else:
+                author_str = str(author)
+        
+        if author_str:
+            normalized_author = re.sub(r'\s+', ' ', author_str.lower().strip())
             # Remove common punctuation
             normalized_author = re.sub(r'[.,;:!?\'"()]', '', normalized_author)
         else:
@@ -440,9 +475,9 @@ class StatisticsService:
     
     def calculate_similar_sentiment(self, threshold: float = 1.5) -> List[Dict]:
         """Calculate books with similar sentiment (low rating std dev)"""
-        
-        # Get all reads with ratings from all users
-        all_reads = self.db.query(Read).join(Book).filter(
+        from sqlalchemy.orm import joinedload
+        # Get all reads with ratings from all users, eager load author relationship
+        all_reads = self.db.query(Read).options(joinedload(Read.book).joinedload(Book.author_obj)).join(Book).filter(
             Read.read_status == "READ",
             Read.rating.isnot(None)
         ).all()
@@ -462,9 +497,15 @@ class StatisticsService:
                 # Use canonical book_id (first one we see for this title+author)
                 if normalized_key_str not in title_author_map:
                     title_author_map[normalized_key_str] = read.book_id
+                    # Get author name - use author_obj relationship or legacy author string
+                    author_name = None
+                    if read.book.author_obj:  # Author relationship object
+                        author_name = read.book.author_obj.name
+                    elif read.book.author:  # Legacy string field
+                        author_name = read.book.author
                     book_info[read.book_id] = {
                         "title": read.book.title,
-                        "author": read.book.author
+                        "author": author_name or ""
                     }
                 
                 canonical_book_id = title_author_map[normalized_key_str]
@@ -510,8 +551,9 @@ class StatisticsService:
     
     def calculate_conjugation_highlights(self, limit: int = 10) -> List[Dict]:
         """Calculate conjugation highlights with overlapping periods and user info"""
-        # Get all reads from all users
-        all_reads = self.db.query(Read).join(Book).filter(
+        from sqlalchemy.orm import joinedload
+        # Get all reads from all users, eager load author relationship
+        all_reads = self.db.query(Read).options(joinedload(Read.book).joinedload(Book.author_obj)).join(Book).filter(
             Read.read_status == "READ",
             Read.date_finished.isnot(None)
         ).all()
@@ -525,7 +567,9 @@ class StatisticsService:
         for read in all_reads:
             if read.book:
                 # Normalize title and author for matching
-                normalized_title, normalized_author = self._normalize_book_identifier(read.book.title, read.book.author)
+                # Get author for normalization - use author_obj or legacy author field
+                author_for_norm = read.book.author_obj.name if read.book.author_obj else read.book.author
+                normalized_title, normalized_author = self._normalize_book_identifier(read.book.title, author_for_norm)
                 normalized_key = f"{normalized_title}|{normalized_author}"
                 
                 # If we've seen this title+author before, use the same book_id group
@@ -536,9 +580,15 @@ class StatisticsService:
                     # First time seeing this book, use its actual book_id
                     book_reads[read.book_id].append(read)
                     title_author_map[normalized_key] = read.book_id
+                    # Get author name - use author_obj relationship or legacy author string
+                    author_name = None
+                    if read.book.author_obj:  # Author relationship object
+                        author_name = read.book.author_obj.name
+                    elif read.book.author:  # Legacy string field
+                        author_name = read.book.author
                     book_info[read.book_id] = {
                         "title": read.book.title,
-                        "author": read.book.author
+                        "author": author_name or ""
                     }
         
         # Calculate conjugation scores
